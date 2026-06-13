@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+motor
+pymongo
+python-dotenv
+pandas
+openpyxl
+xlrd
+python-multipart
+anthropic
