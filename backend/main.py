@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Comma-separated list in .env  e.g.  http://localhost:3000,https://yourapp.vercel.app
-_raw_origins = os.getenv("ALLOWED_ORIGINS")
-allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+# Build CORS origin list from FRONTEND_URL in .env; always include localhost fallback
+_frontend_url = os.getenv("FRONTEND_URL", "").strip()
+allowed_origins = list(filter(None, ["http://localhost:3000", _frontend_url]))
 
 app = FastAPI(title="Material Management API")
 
