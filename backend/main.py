@@ -8,9 +8,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Build CORS origin list from FRONTEND_URL in .env; always include localhost fallback
-_frontend_url = os.getenv("FRONTEND_URL", "").strip()
+# Build CORS origin list from FRONTEND_URL env var; always include localhost fallback.
+# Strip trailing slash — browsers send origins without one (e.g. https://foo.vercel.app).
+_frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
 allowed_origins = list(filter(None, ["http://localhost:3000", _frontend_url]))
+print(f"[CORS] allowed origins: {allowed_origins}")
 
 app = FastAPI(title="Material Management API")
 
@@ -29,6 +31,7 @@ app.include_router(search.router)
 @app.on_event("startup")
 async def startup_event():
     await create_indexes()
+    print(f"[startup] CORS allowed origins: {allowed_origins}")
 
 @app.get("/")
 def root():
