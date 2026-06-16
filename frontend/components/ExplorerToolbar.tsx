@@ -32,7 +32,7 @@ export default function ExplorerToolbar({
   const filterRef = useRef<HTMLDivElement>(null);
 
   const sortableCols = schema.length > 0 ? schema : [{ name: "row_index", type: "numeric" }];
-  const filterableCols = schema.filter((c) => c.type === "categorical" || c.type === "text");
+  const filterableCols = schema;
 
   const hasActiveFilter = Boolean(sortFilter.filterField && sortFilter.filterValue);
   const hasCustomSort =
@@ -191,7 +191,7 @@ export default function ExplorerToolbar({
                 <option value="">Select column…</option>
                 {filterableCols.map((c) => (
                   <option key={c.name} value={c.name}>
-                    {c.name.replace(/_/g, " ")}
+                    {c.name.replace(/_/g, " ")} ({c.type})
                   </option>
                 ))}
               </select>

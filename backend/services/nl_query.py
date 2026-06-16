@@ -31,7 +31,7 @@ def nl_to_chart(df: pd.DataFrame, schema: list, user_query) -> dict:
     Structured query shape
     ──────────────────────
     {
-      "chart_type":   "bar" | "line" | "scatter" | "pie" | "histogram",
+      "chart_type":   "bar" | "line" | "scatter" | "pie" | "histogram" | "combo",
 
       "x_column":     "<col>",          # group-by / category axis
       "y_columns":    ["<col>", ...],   # one OR MORE numeric columns to plot
@@ -154,7 +154,16 @@ def _build_chart(df: pd.DataFrame, config: dict) -> dict:
             "data": data
         })
 
-    # ── 5. Bar / Line — single or MULTIPLE y columns ───────────────────────
+    # ── 4.5. Combo — requires ≥2 y-columns; fall back to bar otherwise ─────
+    # The multi-series block below naturally emits  type="combo"  because it
+    # inherits the chart_type variable — we just need to guard the edge case
+    # where the user requests combo but only one (or zero) columns are valid.
+    if chart_type == "combo":
+        preview = [c for c in y_cols if c in fdf.columns]
+        if len(preview) < 2:
+            chart_type = "bar"   # not enough series → plain bar chart
+
+    # ── 5. Bar / Line / Combo — single or MULTIPLE y columns ────────────────
     if not x_col or x_col not in fdf.columns:
         return sanitize({"chart_id": "nl_result", "type": chart_type,
                          "title": "No data — check column names", "data": []})
@@ -323,6 +332,11 @@ def _parse_query(user_query, schema: list) -> dict:
         chart_type = "line"
     elif any(w in query for w in ["histogram", "distribution", "frequency"]):
         chart_type = "histogram"
+    elif any(w in query for w in [
+        "combo", "mixed chart", "bar and line", "bars and line",
+        "bar line", "combined chart", "overlay",
+    ]):
+        chart_type = "combo"
 
     agg = "sum"
     if any(w in query for w in ["average", "mean", "avg"]):

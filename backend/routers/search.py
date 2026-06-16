@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
-from database import rows_col
+from database import rows_col, uploads_col
 from bson import ObjectId
 
 router = APIRouter()
@@ -7,18 +7,31 @@ router = APIRouter()
 ALLOWED_SORT_DIRS = {"asc", "desc"}
 
 
-def _build_query(upload_id: ObjectId, q: str, filter_field: str, filter_value: str) -> dict:
+def _build_query(upload_id: ObjectId, q: str, filter_field: str, filter_value: str, field_type: str | None = None) -> dict:
     query: dict = {"upload_id": upload_id}
 
     if q:
         query["$text"] = {"$search": q}
 
     if filter_field and filter_value:
-        # Exact match on nested data field (case-insensitive for strings)
-        query[f"data.{filter_field}"] = {
-            "$regex": f"^{filter_value}$",
-            "$options": "i",
-        }
+        if field_type == "numeric":
+            try:
+                val_float = float(filter_value)
+                if val_float.is_integer():
+                    query[f"data.{filter_field}"] = {"$in": [val_float, int(val_float)]}
+                else:
+                    query[f"data.{filter_field}"] = val_float
+            except ValueError:
+                query[f"data.{filter_field}"] = {
+                    "$regex": f"^{filter_value}$",
+                    "$options": "i",
+                }
+        else:
+            # Exact match on nested data field (case-insensitive for strings)
+            query[f"data.{filter_field}"] = {
+                "$regex": f"^{filter_value}$",
+                "$options": "i",
+            }
 
     return query
 
@@ -55,9 +68,19 @@ async def search(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid upload_id")
 
+    # Find the schema to check the type of filter_field
+    field_type = None
+    if filter_field:
+        upload = await uploads_col.find_one({"_id": oid}, {"schema": 1})
+        if upload and "schema" in upload:
+            for col in upload["schema"]:
+                if col.get("name") == filter_field:
+                    field_type = col.get("type")
+                    break
+
     skip = (page - 1) * limit
     has_text = bool(q.strip())
-    query = _build_query(oid, q.strip(), filter_field.strip(), filter_value.strip())
+    query = _build_query(oid, q.strip(), filter_field.strip(), filter_value.strip(), field_type)
     sort_list = _sort_spec(sort_by.strip() or "row_index", sort_dir, has_text)
 
     total = await rows_col.count_documents(query)

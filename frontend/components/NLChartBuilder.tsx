@@ -17,6 +17,7 @@ import {
   Activity,
   Sparkles,
   X,
+  Layers,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import ChartRenderer from "./ChartRenderer";
@@ -47,11 +48,12 @@ interface NLChartBuilderProps {
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const CHART_TYPES = [
-  { value: "bar",       label: "Bar",       icon: BarChart2 },
-  { value: "line",      label: "Line",      icon: TrendingUp },
-  { value: "pie",       label: "Pie",       icon: PieChart },
+  { value: "bar",       label: "Bar",       icon: BarChart2   },
+  { value: "line",      label: "Line",      icon: TrendingUp  },
+  { value: "combo",     label: "Combo",     icon: Layers      },
+  { value: "pie",       label: "Pie",       icon: PieChart    },
   { value: "scatter",   label: "Scatter",   icon: ScatterChart },
-  { value: "histogram", label: "Histogram", icon: Activity },
+  { value: "histogram", label: "Histogram", icon: Activity    },
 ];
 
 const AGGREGATIONS = [
@@ -229,6 +231,13 @@ function VisualQueryBuilder({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!xColumn) return;
+
+    // Combo requires at least 2 y-columns
+    if (chartType === "combo" && yColumns.length < 2) {
+      setError("Combo chart requires at least 2 Y-axis columns. Select more columns below.");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -339,7 +348,9 @@ function VisualQueryBuilder({
           <label style={s.fieldLabel}>
             Y Axis — Values
             <span style={{ marginLeft: "0.5rem", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
-              (click to toggle; select multiple for multi-series)
+              {chartType === "combo"
+                ? "(select ≥2 columns — large-scale → bars, small-scale → line)"
+                : "(click to toggle; select multiple for multi-series)"}
             </span>
           </label>
           {yOptions.length === 0 ? (
@@ -358,6 +369,30 @@ function VisualQueryBuilder({
                   {c.name}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Combo helper banner */}
+          {chartType === "combo" && (
+            <div
+              style={{
+                marginTop: "0.75rem",
+                padding: "0.625rem 0.875rem",
+                borderRadius: "10px",
+                background: yColumns.length >= 2 ? "#f0fdf4" : "#fffbeb",
+                border: `1px solid ${yColumns.length >= 2 ? "#86efac" : "#fcd34d"}`,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                fontSize: "0.8rem",
+                color: yColumns.length >= 2 ? "#15803d" : "#92400e",
+                fontWeight: 500,
+              }}
+            >
+              <Layers size={13} style={{ flexShrink: 0 }} />
+              {yColumns.length >= 2
+                ? `${yColumns.length} series selected — the frontend will auto-assign bars vs line based on scale.`
+                : `Select at least 2 columns. The largest-magnitude columns become bars; smaller ones become the line overlay.`}
             </div>
           )}
         </div>
@@ -553,7 +588,11 @@ function TextQuery({
   }
   if (numCols.length >= 2) suggestions.push(`Scatter of ${numCols[0]} vs ${numCols[1]}`);
   if (catCols.length) suggestions.push(`Pie chart of ${catCols[0]}`);
-  const chips = suggestions.slice(0, 4);
+  // Combo suggestion — shown when there are 2+ numeric columns
+  if (numCols.length >= 2 && catCols.length) {
+    suggestions.push(`Combo chart of ${numCols[0]} and ${numCols[1]} by ${catCols[0]}`);
+  }
+  const chips = suggestions.slice(0, 5);
 
   return (
     <form onSubmit={handleSubmit}>

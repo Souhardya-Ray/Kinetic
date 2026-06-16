@@ -1,95 +1,145 @@
 import pandas as pd
 import json
+from collections import defaultdict
+
+# Ratio threshold — mirrors the frontend's buildAxisMap RATIO_THRESHOLD constant.
+# A series whose max is >20× smaller than the dominant series goes to right axis
+# (rendered as a line in a combo chart).
+_RATIO_THRESHOLD = 20
+
+
+def _max_abs(df: pd.DataFrame, col: str) -> float:
+    """Return the maximum absolute value of a numeric column (0 if all NaN)."""
+    series = pd.to_numeric(df[col], errors="coerce").abs()
+    return float(series.max()) if not series.empty and series.notna().any() else 0.0
+
+
+def _split_by_scale(
+    df: pd.DataFrame, cols: list[str]
+) -> tuple[list[str], list[str]]:
+    """
+    Split *cols* into (bar_keys, line_keys) using the same ratio-based rule
+    as the frontend's ``buildAxisMap``.
+
+    bar_keys  — large-magnitude columns  → rendered as grouped bars (left axis)
+    line_keys — small-magnitude columns  → rendered as line overlay (right axis)
+
+    Returns ([], []) when all columns share the same scale (no combo needed).
+    """
+    if not cols:
+        return [], []
+
+    max_vals = {col: _max_abs(df, col) for col in cols}
+    sorted_cols = sorted(cols, key=lambda c: max_vals[c], reverse=True)
+    dominant = max_vals[sorted_cols[0]] or 1.0
+
+    bar_keys  = [c for c in sorted_cols
+                 if dominant / (max_vals[c] or 1.0) <= _RATIO_THRESHOLD]
+    line_keys = [c for c in sorted_cols
+                 if dominant / (max_vals[c] or 1.0) >  _RATIO_THRESHOLD]
+    return bar_keys, line_keys
+
 
 def generate_chart_configs(df: pd.DataFrame, schema: list[dict]) -> list[dict]:
-    charts = []
-    numeric_cols = [c["name"] for c in schema if c["type"] == "numeric"]
-    categorical_cols = [c["name"] for c in schema if c["type"] == "categorical"]
+    """
+    Auto-generate chart configs from an uploaded dataset.
 
-    # 1. KPI cards (return as a special chart type)
-    # kpi_data = []
-    # for col in numeric_cols[:6]:
-    #     kpi_data.append({
-    #         "label": col,
-    #         "value": float(round(df[col].sum(), 2)),
-    #         "mean": float(round(df[col].mean(), 2))
-    #     })
-    # if kpi_data:
-    #     charts.append({"chart_id": "kpis", "type": "kpi", "data": kpi_data})
+    Currently produces **combo charts** whenever numeric columns in the dataset
+    span very different scales (ratio > 20×).  Two passes are made:
 
-    # 2. For each categorical column, sum each numeric column -> grouped bar
-    # for cat_col in categorical_cols[:3]:
-    #     for num_col in numeric_cols[:4]:
-    #         grouped = df.groupby(cat_col)[num_col].sum().reset_index()
-    #         # Do NOT rename columns, frontend uses cat_col and num_col as keys
-    #         charts.append({
-    #             "chart_id": f"{cat_col}__{num_col}__bar",
-    #             "type": "bar",
-    #             "title": f"{num_col} by {cat_col}",
-    #             "x_column": cat_col,
-    #             "y_column": num_col,
-    #             "data": json.loads(grouped.to_json(orient="records"))
-    #         })
+    A) Time-series prefix groups
+       Columns that share a prefix separated by an underscore are treated as a
+       time series (e.g. ``energy_jan``, ``energy_feb``).  If the group contains
+       mixed-scale columns, a combo chart is emitted for that prefix.
 
-    # 3. Detect time-series columns (same prefix, different suffix)
-    # from collections import defaultdict
-    # prefix_groups = defaultdict(list)
+    B) Cross-column overview
+       A single overview combo chart is generated from up to 5 of the dataset's
+       numeric columns (3 bar + 2 line) when a scale gap is detected.
+
+    The returned list is empty when no mixed-scale columns are found, so the
+    frontend receives ``charts: []`` and silently shows nothing — exactly the
+    same behaviour as before this change.
+    """
+    charts: list[dict] = []
+    # numeric_cols     = [c["name"] for c in schema if c["type"] == "numeric"]
+    # categorical_cols = [c["name"] for c in schema if c["type"] == "categorical"]
+
+    # if not numeric_cols or not categorical_cols:
+    #     return charts
+
+    # cat_col = categorical_cols[0]   # primary x-axis / grouping column
+    # generated_ids: set[str] = set()
+
+    # # ── A. Time-series prefix groups (e.g. sales_jan, sales_feb …) ───────────
+    # prefix_groups: dict[str, list[str]] = defaultdict(list)
     # for col in numeric_cols:
     #     parts = col.rsplit("_", 1)
     #     if len(parts) == 2:
     #         prefix_groups[parts[0]].append(col)
+
     # for prefix, cols in prefix_groups.items():
-    #     if len(cols) >= 2:
-    #         totals = {col: float(df[col].sum()) for col in cols}
-    #         data = [{"name": col.split("_")[-1], "value": val}
-    #                 for col, val in totals.items()]
+    #     if len(cols) < 2:
+    #         continue
+
+    #     bar_keys, line_keys = _split_by_scale(df, cols)
+    #     if not bar_keys or not line_keys:
+    #         # All columns are on the same scale — not a combo candidate.
+    #         continue
+
+    #     all_cols = bar_keys + line_keys
+    #     chart_id = f"{prefix}__combo"
+    #     if chart_id in generated_ids:
+    #         continue
+    #     generated_ids.add(chart_id)
+
+    #     try:
+    #         grouped = (
+    #             df.groupby(cat_col)[all_cols]
+    #             .sum()
+    #             .reset_index()
+    #             .rename(columns={cat_col: "name"})
+    #         )
     #         charts.append({
-    #             "chart_id": f"{prefix}__trend",
-    #             "type": "line",
-    #             "title": f"{prefix} trend over time",
-    #             "data": data
+    #             "chart_id":     chart_id,
+    #             "type":         "combo",
+    #             "title":        (
+    #                 f"{prefix.replace('_', ' ').title()} — Combo by {cat_col}"
+    #             ),
+    #             "x_column":     cat_col,
+    #             "y_columns":    all_cols,
+    #             "multi_series": True,
+    #             "data":         json.loads(grouped.to_json(orient="records")),
     #         })
+    #     except Exception:
+    #         continue   # skip silently on aggregation errors
 
-    # 4. Scatter: first two numeric cols
+    # # ── B. Cross-column overview combo (up to 3 bar + 2 line series) ─────────
     # if len(numeric_cols) >= 2:
-    #     scatter_data = df[[numeric_cols[0], numeric_cols[1]]].dropna()
-    #     scatter_data = scatter_data.sample(min(500, len(scatter_data)))
-    #     scatter_data.columns = ["x", "y"]
-    #     charts.append({
-    #         "chart_id": f"{numeric_cols[0]}__{numeric_cols[1]}__scatter",
-    #         "type": "scatter",
-    #         "title": f"{numeric_cols[0]} vs {numeric_cols[1]}",
-    #         "x_column": numeric_cols[0],
-    #         "y_column": numeric_cols[1],
-    #         "data": json.loads(scatter_data.to_json(orient="records"))
-    #     })
+    #     bar_keys, line_keys = _split_by_scale(df, numeric_cols[:8])
 
-    # 5. Pie: row count per first categorical column
-    # if categorical_cols:
-    #     pie_data = df[categorical_cols[0]].value_counts().reset_index()
-    #     pie_data.columns = ["name", "value"]
-    #     charts.append({
-    #         "chart_id": f"{categorical_cols[0]}__pie",
-    #         "type": "pie",
-    #         "title": f"Distribution by {categorical_cols[0]}",
-    #         "data": json.loads(pie_data.to_json(orient="records"))
-    #     })
+    #     if bar_keys and line_keys:
+    #         all_keys = bar_keys[:3] + line_keys[:2]
+    #         chart_id = f"{cat_col}__overview_combo"
 
-    # 6. Histogram: distribution of first numeric column
-    # if numeric_cols:
-    #     hist_col = numeric_cols[0]
-    #     hist_data, bin_edges = pd.cut(df[hist_col].dropna(),
-    #                                   bins=20, retbins=True)
-    #     hist_counts = hist_data.value_counts().sort_index()
-    #     hist_out = [
-    #         {"name": f"{round(e,1)}", "value": int(c)}
-    #         for e, c in zip(bin_edges[1:], hist_counts)
-    #     ]
-    #     charts.append({
-    #         "chart_id": f"{hist_col}__histogram",
-    #         "type": "histogram",
-    #         "title": f"Distribution of {hist_col}",
-    #         "data": hist_out
-    #     })
+    #         if chart_id not in generated_ids:
+    #             generated_ids.add(chart_id)
+    #             try:
+    #                 grouped = (
+    #                     df.groupby(cat_col)[all_keys]
+    #                     .sum()
+    #                     .reset_index()
+    #                     .rename(columns={cat_col: "name"})
+    #                 )
+    #                 charts.append({
+    #                     "chart_id":     chart_id,
+    #                     "type":         "combo",
+    #                     "title":        f"Overview Combo Chart by {cat_col}",
+    #                     "x_column":     cat_col,
+    #                     "y_columns":    all_keys,
+    #                     "multi_series": True,
+    #                     "data":         json.loads(grouped.to_json(orient="records")),
+    #                 })
+    #             except Exception:
+    #                 pass
 
     return charts

@@ -40,9 +40,10 @@ async def custom_query(upload_id: str, body: dict):
 
     Body shape:
     {
-      "chart_type":  "bar" | "line" | "scatter" | "pie" | "histogram",
+      "chart_type":  "bar" | "line" | "scatter" | "pie" | "histogram" | "combo",
       "x_column":    "<column name>",
-      "y_column":    "<column name or null>",
+      "y_columns":   ["<col>", ...],      # one OR more numeric columns
+                                           # (single string also accepted)
       "aggregation": "sum" | "mean" | "count" | "min" | "max" | "none",
       "filters": [
         { "column": "<col>", "operator": "eq|neq|gt|lt|gte|lte|contains", "value": "<val>" }
@@ -52,7 +53,25 @@ async def custom_query(upload_id: str, body: dict):
       "limit":    10,
       "title":    "<optional>"
     }
+
+    combo chart notes
+    ─────────────────
+    • Requires at least 2 entries in y_columns.
+    • The backend aggregates all y_columns and returns type="combo" with
+      multi_series=true.  The frontend then auto-splits bar vs line series
+      using the same ratio-based scale detection (RATIO_THRESHOLD=20×).
+    • If fewer than 2 valid y_columns are resolved, the type silently
+      falls back to "bar" so the chart never returns empty.
     """
+    VALID_CHART_TYPES = {"bar", "line", "scatter", "pie", "histogram", "combo"}
+    chart_type = body.get("chart_type", "bar")
+    if chart_type not in VALID_CHART_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown chart_type '{chart_type}'. "
+                   f"Valid values: {sorted(VALID_CHART_TYPES)}",
+        )
+
     upload, df = await _load_df_and_upload(upload_id)
     result = nl_to_chart(df, upload["schema"], body)   # body is already a dict
     return result
