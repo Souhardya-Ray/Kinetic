@@ -25,6 +25,7 @@ const DEFAULT_SORT_FILTER: SortFilterState = {
   sortDir: "asc",
   filterField: "",
   filterValue: "",
+  filters: [],
 };
 
 function SearchContent() {
@@ -64,6 +65,7 @@ function SearchContent() {
         sortDir: sortFilter.sortDir,
         filterField: sortFilter.filterField,
         filterValue: sortFilter.filterValue,
+        filters: sortFilter.filters,
       });
       setResults(data.results);
       setTotal(data.total);
@@ -140,10 +142,21 @@ function SearchContent() {
                     for &ldquo;<span style={{ color: "var(--blue)" }}>{query}</span>&rdquo;
                   </span>
                 )}
-                {sortFilter.filterField && sortFilter.filterValue && (
+                {sortFilter.filters && sortFilter.filters.length > 0 && (
                   <span style={{ color: "var(--text-muted)" }}>
                     {" "}
-                    · filtered by {sortFilter.filterField}
+                    · filtered by {sortFilter.filters.map(f => {
+                      const opSymbols: Record<string, string> = {
+                        eq: "=",
+                        neq: "≠",
+                        contains: "contains",
+                        gt: ">",
+                        lt: "<",
+                        gte: "≥",
+                        lte: "≤",
+                      };
+                      return `${f.column} ${opSymbols[f.operator] || f.operator} ${f.value}`;
+                    }).join(" & ")}
                   </span>
                 )}
               </span>

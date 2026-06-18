@@ -88,6 +88,7 @@ export const api = {
       sortDir?: "asc" | "desc";
       filterField?: string;
       filterValue?: string;
+      filters?: { column: string; operator: string; value: string }[];
     } = {}
   ) {
     const {
@@ -98,6 +99,7 @@ export const api = {
       sortDir = "asc",
       filterField = "",
       filterValue = "",
+      filters = [],
     } = options;
 
     const params = new URLSearchParams({
@@ -111,6 +113,10 @@ export const api = {
     if (filterField && filterValue) {
       params.set("filter_field", filterField);
       params.set("filter_value", filterValue);
+    }
+
+    if (filters && filters.length > 0) {
+      params.set("filters", JSON.stringify(filters));
     }
 
     const res = await fetch(`${API_URL}/api/search/${uploadId}?${params}`);

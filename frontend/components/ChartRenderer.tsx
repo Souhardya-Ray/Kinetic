@@ -129,6 +129,31 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 // ─── Custom Legend ────────────────────────────────────────────────────────────
+const LegendIcon = ({ type, color }: { type: string; color: string }) => {
+  if (type === "line") {
+    return (
+      <svg width={24} height={12} style={{ flexShrink: 0 }}>
+        <line x1={0} y1={6} x2={24} y2={6} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+        <circle cx={12} cy={6} r={3.5} fill={color} stroke="#fff" strokeWidth={1.5} />
+      </svg>
+    );
+  }
+  if (type === "circle") {
+    // Scatter plot — show a solid dot
+    return (
+      <svg width={12} height={12} style={{ flexShrink: 0 }}>
+        <circle cx={6} cy={6} r={5.5} fill={color} fillOpacity={0.85} />
+      </svg>
+    );
+  }
+  // Bar / histogram — rounded square
+  return (
+    <svg width={12} height={12} style={{ flexShrink: 0 }}>
+      <rect x={0} y={0} width={12} height={12} rx={3} ry={3} fill={color} />
+    </svg>
+  );
+};
+
 const CustomLegend = ({ payload }: { payload?: any[] }) => {
   if (!payload || payload.length === 0) return null;
   return (
@@ -137,33 +162,24 @@ const CustomLegend = ({ payload }: { payload?: any[] }) => {
         display: "flex",
         flexWrap: "wrap",
         justifyContent: "center",
-        gap: "10px 18px",
-        paddingTop: 10,
+        alignItems: "center",
+        gap: "8px 24px",
+        paddingBottom: 14,
+        paddingTop: 4,
         fontFamily: "var(--font-inter, Inter), sans-serif",
+        borderBottom: "1px solid rgba(148,163,184,0.15)",
+        marginBottom: 6,
       }}
     >
       {payload.map((entry: any, i: number) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {entry.type === "line" ? (
-            <svg width={20} height={10} style={{ flexShrink: 0 }}>
-              <line x1={0} y1={5} x2={20} y2={5} stroke={entry.color} strokeWidth={2.5} />
-              <circle cx={10} cy={5} r={3} fill={entry.color} />
-            </svg>
-          ) : (
-            <span
-              style={{
-                display: "inline-block",
-                width: 12,
-                height: 12,
-                borderRadius: 3,
-                backgroundColor: entry.color,
-                flexShrink: 0,
-              }}
-            />
-          )}
-          <span style={{ fontSize: 12, color: "#475569", fontWeight: 500 }}>{entry.value}</span>
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <LegendIcon type={entry.type ?? "rect"} color={entry.color} />
+          <span style={{ fontSize: 12.5, color: "#334155", fontWeight: 600, letterSpacing: "0.01em" }}>
+            {entry.value}
+          </span>
         </div>
       ))}
+
     </div>
   );
 };
@@ -352,7 +368,7 @@ export default function ChartRenderer({ config, compact = false }: ChartProps) {
             )}
 
             <Tooltip content={<CustomTooltip />} />
-            <Legend content={<CustomLegend />} />
+            <Legend verticalAlign="top" align="center" content={<CustomLegend />} />
 
             {/* Grouped bars */}
             {resolvedBarKeys.map((key, idx) => (
@@ -418,7 +434,7 @@ export default function ChartRenderer({ config, compact = false }: ChartProps) {
               />
 
               <Tooltip content={<CustomTooltip />} />
-              <Legend content={<CustomLegend />} />
+              <Legend verticalAlign="top" align="center" content={<CustomLegend />} />
 
               {seriesKeys.map((key, index) =>
                 type === "line" ? (
@@ -450,21 +466,19 @@ export default function ChartRenderer({ config, compact = false }: ChartProps) {
       case "histogram":
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart data={data} margin={{ top: 16, right: 20, left: 40, bottom: data.length > 8 ? 24 : 8 }} barCategoryGap="28%">
+            <BarChart data={data} margin={{ top: 48, right: 20, left: 40, bottom: data.length > 8 ? 24 : 8 }} barCategoryGap="28%">
               <CartesianGrid {...GRID_STYLE} />
               <XAxis dataKey={xKey} {...AXIS_STYLE} {...getXAxisProps(data.length)} />
               <YAxis {...AXIS_STYLE} tick={{ fill: "#94A3B8", fontSize: 11 }} tickFormatter={tickFmt} />
               <Tooltip content={<CustomTooltip />} />
+              <Legend verticalAlign="top" align="center" content={<CustomLegend />} />
               {seriesKeys.length > 0 ? (
-                <>
-                  <Legend content={<CustomLegend />} />
-                  {seriesKeys.map((series, i) => (
-                    <Bar key={series} dataKey={series} name={series}
-                      fill={COLORS[i % COLORS.length]} radius={[5, 5, 0, 0]} maxBarSize={48}
-                      {...CHART_ANIMATION}
-                    />
-                  ))}
-                </>
+                seriesKeys.map((series, i) => (
+                  <Bar key={series} dataKey={series} name={series}
+                    fill={COLORS[i % COLORS.length]} radius={[5, 5, 0, 0]} maxBarSize={48}
+                    {...CHART_ANIMATION}
+                  />
+                ))
               ) : (
                 <Bar dataKey={yKey} name={y_column || yKey} radius={[5, 5, 0, 0]} maxBarSize={48} {...CHART_ANIMATION}>
                   {data.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
@@ -477,23 +491,21 @@ export default function ChartRenderer({ config, compact = false }: ChartProps) {
       case "line":
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
-            <LineChart data={data} margin={{ top: 16, right: 20, left: 40, bottom: data.length > 8 ? 24 : 8 }}>
+            <LineChart data={data} margin={{ top: 48, right: 20, left: 40, bottom: data.length > 8 ? 24 : 8 }}>
               <CartesianGrid {...GRID_STYLE} />
               <XAxis dataKey={xKey} {...AXIS_STYLE} {...getXAxisProps(data.length)} />
               <YAxis {...AXIS_STYLE} tick={{ fill: "#94A3B8", fontSize: 11 }} tickFormatter={tickFmt} />
               <Tooltip content={<CustomTooltip />} />
+              <Legend verticalAlign="top" align="center" content={<CustomLegend />} />
               {seriesKeys.length > 0 ? (
-                <>
-                  <Legend content={<CustomLegend />} />
-                  {seriesKeys.map((series, i) => (
-                    <Line key={series} type="monotone" dataKey={series} name={series}
-                      stroke={COLORS[i % COLORS.length]} strokeWidth={2.5}
-                      dot={{ r: 3, fill: COLORS[i % COLORS.length], stroke: "#fff", strokeWidth: 2 }}
-                      activeDot={{ r: 6, fill: "#fff", stroke: COLORS[i % COLORS.length], strokeWidth: 2.5 }}
-                      {...CHART_ANIMATION}
-                    />
-                  ))}
-                </>
+                seriesKeys.map((series, i) => (
+                  <Line key={series} type="monotone" dataKey={series} name={series}
+                    stroke={COLORS[i % COLORS.length]} strokeWidth={2.5}
+                    dot={{ r: 3, fill: COLORS[i % COLORS.length], stroke: "#fff", strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: "#fff", stroke: COLORS[i % COLORS.length], strokeWidth: 2.5 }}
+                    {...CHART_ANIMATION}
+                  />
+                ))
               ) : (
                 <Line type="monotone" dataKey={yKey} name={y_column || yKey}
                   stroke={COLORS[0]} strokeWidth={3}
@@ -509,12 +521,13 @@ export default function ChartRenderer({ config, compact = false }: ChartProps) {
       case "scatter":
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
-            <ScatterChart margin={{ top: 16, right: 20, left: 24, bottom: 8 }}>
+            <ScatterChart margin={{ top: 48, right: 20, left: 24, bottom: 8 }}>
               <CartesianGrid {...GRID_STYLE} />
               <XAxis dataKey="x" name={x_column} type="number" {...AXIS_STYLE} tick={{ fill: "#94A3B8", fontSize: 11 }} tickFormatter={tickFmt} />
               <YAxis dataKey="y" name={y_column} type="number" {...AXIS_STYLE} tick={{ fill: "#94A3B8", fontSize: 11 }} tickFormatter={tickFmt} />
               <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "4 4", stroke: "rgba(37,99,235,0.25)" }} />
-              <Scatter name="Values" data={data} fill={COLORS[0]} fillOpacity={0.82} {...CHART_ANIMATION} />
+              <Legend verticalAlign="top" align="center" content={<CustomLegend />} />
+              <Scatter name={`${x_column || "x"} vs ${y_column || "y"}`} data={data} fill={COLORS[0]} fillOpacity={0.82} {...CHART_ANIMATION} />
             </ScatterChart>
           </ResponsiveContainer>
         );
@@ -537,7 +550,7 @@ export default function ChartRenderer({ config, compact = false }: ChartProps) {
               </Pie>
               <Tooltip content={<CustomTooltip />} />
               <Legend
-                layout="vertical" verticalAlign="middle" align="right"
+                layout="horizontal" verticalAlign="top" align="center"
                 content={<CustomLegend />}
               />
             </PieChart>

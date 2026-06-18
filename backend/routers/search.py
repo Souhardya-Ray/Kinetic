@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, HTTPException, Query
 from database import rows_col, uploads_col
 from bson import ObjectId
@@ -7,31 +8,70 @@ router = APIRouter()
 ALLOWED_SORT_DIRS = {"asc", "desc"}
 
 
-def _build_query(upload_id: ObjectId, q: str, filter_field: str, filter_value: str, field_type: str | None = None) -> dict:
+def _build_query(upload_id: ObjectId, q: str, filters_list: list, schema: list) -> dict:
     query: dict = {"upload_id": upload_id}
 
     if q:
         query["$text"] = {"$search": q}
 
-    if filter_field and filter_value:
+    schema_types = {col["name"]: col.get("type") for col in schema}
+    and_conditions = []
+
+    for f in filters_list:
+        col = f.get("column")
+        op = f.get("operator", "eq")
+        val = f.get("value")
+        if not col or val is None or val == "":
+            continue
+
+        field_type = schema_types.get(col)
+        field_key = f"data.{col}"
+        cond = {}
+
         if field_type == "numeric":
             try:
-                val_float = float(filter_value)
-                if val_float.is_integer():
-                    query[f"data.{filter_field}"] = {"$in": [val_float, int(val_float)]}
-                else:
-                    query[f"data.{filter_field}"] = val_float
+                val_float = float(val)
+                if op == "eq":
+                    if val_float.is_integer():
+                        cond[field_key] = {"$in": [val_float, int(val_float)]}
+                    else:
+                        cond[field_key] = val_float
+                elif op == "neq":
+                    if val_float.is_integer():
+                        cond[field_key] = {"$nin": [val_float, int(val_float)]}
+                    else:
+                        cond[field_key] = {"$ne": val_float}
+                elif op == "gt":
+                    cond[field_key] = {"$gt": val_float}
+                elif op == "lt":
+                    cond[field_key] = {"$lt": val_float}
+                elif op == "gte":
+                    cond[field_key] = {"$gte": val_float}
+                elif op == "lte":
+                    cond[field_key] = {"$lte": val_float}
             except ValueError:
-                query[f"data.{filter_field}"] = {
-                    "$regex": f"^{filter_value}$",
-                    "$options": "i",
-                }
+                cond[field_key] = {"$regex": f"^{val}$", "$options": "i"}
         else:
-            # Exact match on nested data field (case-insensitive for strings)
-            query[f"data.{filter_field}"] = {
-                "$regex": f"^{filter_value}$",
-                "$options": "i",
-            }
+            if op == "eq":
+                cond[field_key] = {"$regex": f"^{val}$", "$options": "i"}
+            elif op == "neq":
+                cond[field_key] = {"$not": {"$regex": f"^{val}$", "$options": "i"}}
+            elif op == "contains":
+                cond[field_key] = {"$regex": val, "$options": "i"}
+            elif op == "gt":
+                cond[field_key] = {"$gt": val}
+            elif op == "lt":
+                cond[field_key] = {"$lt": val}
+            elif op == "gte":
+                cond[field_key] = {"$gte": val}
+            elif op == "lte":
+                cond[field_key] = {"$lte": val}
+
+        if cond:
+            and_conditions.append(cond)
+
+    if and_conditions:
+        query["$and"] = and_conditions
 
     return query
 
@@ -59,6 +99,7 @@ async def search(
     sort_dir: str = "asc",
     filter_field: str = "",
     filter_value: str = "",
+    filters: str = "",
 ):
     if sort_dir not in ALLOWED_SORT_DIRS:
         raise HTTPException(status_code=400, detail="sort_dir must be 'asc' or 'desc'")
@@ -68,19 +109,28 @@ async def search(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid upload_id")
 
-    # Find the schema to check the type of filter_field
-    field_type = None
-    if filter_field:
-        upload = await uploads_col.find_one({"_id": oid}, {"schema": 1})
-        if upload and "schema" in upload:
-            for col in upload["schema"]:
-                if col.get("name") == filter_field:
-                    field_type = col.get("type")
-                    break
+    schema = []
+    upload = await uploads_col.find_one({"_id": oid}, {"schema": 1})
+    if upload and "schema" in upload:
+        schema = upload["schema"]
+
+    filters_list = []
+    if filters:
+        try:
+            filters_list = json.loads(filters)
+        except Exception:
+            pass
+
+    if filter_field and filter_value:
+        filters_list.append({
+            "column": filter_field,
+            "operator": "eq",
+            "value": filter_value
+        })
 
     skip = (page - 1) * limit
     has_text = bool(q.strip())
-    query = _build_query(oid, q.strip(), filter_field.strip(), filter_value.strip(), field_type)
+    query = _build_query(oid, q.strip(), filters_list, schema)
     sort_list = _sort_spec(sort_by.strip() or "row_index", sort_dir, has_text)
 
     total = await rows_col.count_documents(query)
