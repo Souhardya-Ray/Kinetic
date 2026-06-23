@@ -27,6 +27,14 @@ export const api = {
     if (!res.ok) throw new Error("Failed to activate");
     return res.json();
   },
+
+  async deleteUpload(id: string) {
+    const res = await fetch(`${API_URL}/api/uploads/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete upload");
+    return res.json();
+  },
   
   async getAnalytics(uploadId: string) {
     const res = await fetch(`${API_URL}/api/analytics/${uploadId}`);

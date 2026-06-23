@@ -24,20 +24,41 @@ import {
   LineChart,
   Table2,
   ChevronDown,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 
 export default function Home() {
   const [uploads, setUploads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchUploads = () => {
     api.getUploads()
       .then((data) => {
         setUploads(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchUploads();
   }, []);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await api.deleteUpload(id);
+      setUploads((prev) => prev.filter((u) => u._id !== id));
+    } catch {
+      // keep the list as-is on failure
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  };
 
   const stats = useMemo(() => {
     const totalRows = uploads.reduce((sum, u) => sum + (u.row_count || 0), 0);
@@ -365,18 +386,127 @@ export default function Home() {
                 <div
                   key={upload._id}
                   className={`card upload-card card-hover ${upload.is_active ? "card-blue" : ""} animate-up stagger-${Math.min(i + 1, 8)}`}
+                  style={{ position: "relative" }}
                 >
+                  {/* Active badge */}
                   {upload.is_active && (
                     <div
                       style={{
                         position: "absolute",
                         top: "1.25rem",
-                        right: "1.25rem",
+                        right: "3.75rem",
                       }}
                     >
                       <span className="badge badge-green">
                         <CheckCircle2 size={10} /> Active
                       </span>
+                    </div>
+                  )}
+
+                  {/* Delete button */}
+                  <button
+                    id={`delete-btn-${upload._id}`}
+                    type="button"
+                    aria-label="Delete dataset"
+                    onClick={() => setConfirmDeleteId(upload._id)}
+                    style={{
+                      position: "absolute",
+                      top: "1rem",
+                      right: "1rem",
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      borderRadius: "8px",
+                      width: "32px",
+                      height: "32px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      color: "var(--text-muted)",
+                      transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = "var(--red-pale)";
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red)";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--red)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border)";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+
+                  {/* Inline confirm dialog */}
+                  {confirmDeleteId === upload._id && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        borderRadius: "inherit",
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "1rem",
+                        padding: "1.5rem",
+                        zIndex: 10,
+                        border: "1.5px solid var(--red)",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: "50%",
+                          background: "var(--red-pale)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <AlertTriangle size={22} color="var(--red)" />
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <p style={{ fontWeight: 700, fontSize: "0.9375rem", marginBottom: "0.375rem" }}>
+                          Delete dataset?
+                        </p>
+                        <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                          This will permanently remove <strong>{upload.filename}</strong> and all its rows from MongoDB.
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.625rem", width: "100%" }}>
+                        <button
+                          id={`confirm-cancel-${upload._id}`}
+                          type="button"
+                          className="btn btn-outline"
+                          style={{ flex: 1, fontSize: "0.8125rem" }}
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          id={`confirm-delete-${upload._id}`}
+                          type="button"
+                          className="btn"
+                          style={{
+                            flex: 1,
+                            fontSize: "0.8125rem",
+                            background: "var(--red)",
+                            color: "#fff",
+                            border: "none",
+                            opacity: deletingId === upload._id ? 0.6 : 1,
+                          }}
+                          disabled={deletingId === upload._id}
+                          onClick={() => handleDelete(upload._id)}
+                        >
+                          {deletingId === upload._id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
                     </div>
                   )}
 

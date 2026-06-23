@@ -82,3 +82,41 @@ async def activate_upload(upload_id: str):
     await uploads_col.update_many({}, {"$set": {"is_active": False}})
     await uploads_col.update_one({"_id": oid}, {"$set": {"is_active": True}})
     return {"status": "ok"}
+
+@router.delete("/api/uploads/{upload_id}")
+async def delete_upload(upload_id: str):
+    oid = ObjectId(upload_id)
+
+    # Fetch the upload to get GridFS file id and active status
+    upload_doc = await uploads_col.find_one({"_id": oid})
+    if not upload_doc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    was_active = upload_doc.get("is_active", False)
+    gridfs_file_id = upload_doc.get("gridfs_file_id")
+
+    # Delete rows, upload metadata, and GridFS file concurrently
+    import asyncio
+    tasks = [
+        rows_col.delete_many({"upload_id": oid}),
+        uploads_col.delete_one({"_id": oid}),
+    ]
+    if gridfs_file_id:
+        fs_bucket = get_fs_bucket()
+        tasks.append(fs_bucket.delete(gridfs_file_id))
+
+    await asyncio.gather(*tasks)
+
+    # If the deleted dataset was active, promote the most recent remaining one
+    if was_active:
+        next_upload = await uploads_col.find_one(
+            {}, sort=[("uploaded_at", -1)]
+        )
+        if next_upload:
+            await uploads_col.update_one(
+                {"_id": next_upload["_id"]},
+                {"$set": {"is_active": True}}
+            )
+
+    return {"status": "deleted", "upload_id": upload_id}
